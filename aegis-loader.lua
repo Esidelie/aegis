@@ -15,14 +15,47 @@ local function checkKey(key)
         "https://firestore.googleapis.com/v1/projects/%s/databases/(default)/documents/keys/%s?key=%s",
         CONFIG.projectId, key, CONFIG.apiKey
     )
-    local ok, response = pcall(function() return game:HttpGet(url) end)
-    if not ok or not response then return nil end
-    if response:find('"error"') then return nil end
 
-    local tier = response:match('"tier".-"stringValue":"(%w+)"')
-    local expires = response:match('"expires".-"integerValue":"(%d+)"')
-    if not tier then return nil end
-    if expires and tonumber(expires) > 0 and os.time() > tonumber(expires) then return nil end
+    local ok, response = pcall(function() return game:HttpGet(url) end)
+    if not ok or not response then
+        warn("[Aegis] HttpGet failed")
+        return nil
+    end
+
+    if type(response) == "table" and response.Body then
+        response = response.Body
+    end
+
+    if #response < 10 then
+        warn("[Aegis] Empty response")
+        return nil
+    end
+
+    if response:find('"error"') then
+        warn("[Aegis] Firebase error: " .. string.sub(response, 1, 200))
+        return nil
+    end
+
+    local tier = response:match('"tier"[^}]*"stringValue"[^"]*"([^"]+)"')
+    local expires = response:match('"expires"[^}]*"integerValue"[^"]*"([^"]+)"')
+
+    if not tier then
+        if response:find('"premium"') then tier = "premium"
+        elseif response:find('"free"') then tier = "free" end
+    end
+
+    if not tier then
+        warn("[Aegis] Could not parse tier. Response: " .. string.sub(response, 1, 300))
+        return nil
+    end
+
+    if expires and tonumber(expires) and tonumber(expires) > 0 then
+        if os.time() > tonumber(expires) then
+            warn("[Aegis] Key expired")
+            return nil
+        end
+    end
+
     return tier
 end
 
