@@ -1,8 +1,11 @@
+-- Aegis Solutions | Loader
+-- built for those who never miss.
+
 local CONFIG = {
     projectId = "aegis-keys-37a0b",
     apiKey = "AIzaSyDuqtI_DHo68FK8ey4kO9E1C8vaEyQd0UI",
-    scriptUrl = "https://raw.githubusercontent.com/esidelie/aegis/main/aegis-script.lua",
-    premiumUrl = "https://raw.githubusercontent.com/esidelie/aegis/main/aegis-premium.lua",
+    scriptUrl = "https://raw.githubusercontent.com/Esidelie/aegis/main/aegis-script.lua",
+    premiumUrl = "https://raw.githubusercontent.com/Esidelie/aegis/main/aegis-premium.lua",
 }
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
@@ -31,20 +34,31 @@ local Window = Rayfield:CreateWindow({
     KeySystem = false,
 })
 
-local userKey, userTier = nil, nil
+local KeyTab = Window:CreateTab("Verification", 4483362458)
 
-Window:CreateSection("Verification")
-Window:CreateInput({
-    Name = "Enter your key",
+local userKey = nil
+
+KeyTab:CreateSection("Enter your key")
+KeyTab:CreateInput({
+    Name = "Key",
     PlaceholderText = "AEGIS-XXXX-XXXX",
     RemoveTextAfterFocusLost = false,
     Callback = function(text) userKey = text end,
 })
 
-Window:CreateButton({
+KeyTab:CreateSection("Actions")
+KeyTab:CreateButton({
     Name = "Verify",
     Callback = function()
-        if not userKey then return end
+        if not userKey or userKey == "" then
+            Rayfield:Notify({
+                Title = "Aegis",
+                Content = "Enter a key first.",
+                Duration = 5,
+            })
+            return
+        end
+
         local tier = checkKey(userKey)
         if not tier then
             Rayfield:Notify({
@@ -54,18 +68,26 @@ Window:CreateButton({
             })
             return
         end
-        userTier = tier
+
         Rayfield:Notify({
             Title = "Aegis",
-            Content = "Verified as " .. tier:upper() .. ". Loading...",
+            Content = "Verified as " .. string.upper(tier) .. ". Loading...",
             Duration = 3,
         })
+
         task.wait(1)
-        Window:Destroy()
-        if tier == "premium" then
-            loadstring(game:HttpGet(CONFIG.premiumUrl))()
-        else
-            loadstring(game:HttpGet(CONFIG.scriptUrl))()
+
+        local url = (tier == "premium") and CONFIG.premiumUrl or CONFIG.scriptUrl
+
+        if Window and Window.Destroy then
+            pcall(function() Window:Destroy() end)
         end
+
+        loadstring(game:HttpGet(url))()
     end,
 })
+
+KeyTab:CreateSection("Info")
+KeyTab:CreateLabel("Free keys: 12 hours")
+KeyTab:CreateLabel("Premium: permanent access")
+KeyTab:CreateLabel("Get keys at discord.gg/aegis")
