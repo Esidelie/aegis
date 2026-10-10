@@ -2,8 +2,7 @@
 -- built for those who never miss.
 
 local CONFIG = {
-    projectId = "aegis-keys-37a0b",
-    apiKey = "AIzaSyDuqtI_DHo68FK8ey4kO9E1C8vaEyQd0UI",
+    workerUrl = "https://aegis-keys.gillathissnev4pro.workers.dev",
     scriptUrl = "https://raw.githubusercontent.com/Esidelie/aegis/main/aegis-script.lua",
     premiumUrl = "https://raw.githubusercontent.com/Esidelie/aegis/main/aegis-premium.lua",
 }
@@ -11,52 +10,20 @@ local CONFIG = {
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
 
 local function checkKey(key)
-    local url = string.format(
-        "https://firestore.googleapis.com/v1/projects/%s/databases/(default)/documents/keys/%s?key=%s",
-        CONFIG.projectId, key, CONFIG.apiKey
-    )
-
+    local url = CONFIG.workerUrl .. "/check?key=" .. key
     local ok, response = pcall(function() return game:HttpGet(url) end)
     if not ok or not response then
         warn("[Aegis] HttpGet failed")
         return nil
     end
-
     if type(response) == "table" and response.Body then
         response = response.Body
     end
-
-    if #response < 10 then
-        warn("[Aegis] Empty response")
-        return nil
+    if response:find('"valid":true') then
+        local tier = response:match('"tier":"(%w+)"') or "free"
+        return tier
     end
-
-    if response:find('"error"') then
-        warn("[Aegis] Firebase error: " .. string.sub(response, 1, 200))
-        return nil
-    end
-
-    local tier = response:match('"tier"[^}]*"stringValue"[^"]*"([^"]+)"')
-    local expires = response:match('"expires"[^}]*"integerValue"[^"]*"([^"]+)"')
-
-    if not tier then
-        if response:find('"premium"') then tier = "premium"
-        elseif response:find('"free"') then tier = "free" end
-    end
-
-    if not tier then
-        warn("[Aegis] Could not parse tier. Response: " .. string.sub(response, 1, 300))
-        return nil
-    end
-
-    if expires and tonumber(expires) and tonumber(expires) > 0 then
-        if os.time() > tonumber(expires) then
-            warn("[Aegis] Key expired")
-            return nil
-        end
-    end
-
-    return tier
+    return nil
 end
 
 local Window = Rayfield:CreateWindow({
@@ -123,4 +90,4 @@ KeyTab:CreateButton({
 KeyTab:CreateSection("Info")
 KeyTab:CreateLabel("Free keys: 12 hours")
 KeyTab:CreateLabel("Premium: permanent access")
-KeyTab:CreateLabel("Get keys at discord.gg/aegis")
+KeyTab:CreateLabel("Get keys at aegis-key.pages.dev")
