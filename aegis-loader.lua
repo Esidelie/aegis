@@ -1,8 +1,8 @@
 local CONFIG = {
     projectId = "aegis-keys-37a0b",
     apiKey = "AIzaSyDuqtI_DHo68FK8ey4kO9E1C8vaEyQd0UI",
-    scriptUrl = "https://raw.githubusercontent.com/TWOJA_NAZWA/aegis/main/aegis-script.lua",
-    premiumUrl = "https://raw.githubusercontent.com/TWOJA_NAZWA/aegis/main/aegis-premium.lua",
+    scriptUrl = "https://raw.githubusercontent.com/esidelie/aegis/main/aegis-script.lua",
+    premiumUrl = "https://raw.githubusercontent.com/esidelie/aegis/main/aegis-premium.lua",
 }
 
 local Rayfield = loadstring(game:HttpGet('https://sirius.menu/rayfield'))()
