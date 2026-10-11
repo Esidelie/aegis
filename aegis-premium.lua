@@ -15,7 +15,6 @@ local Window = Rayfield:CreateWindow({
 
 local ESPTab = Window:CreateTab("ESP", 4483362458)
 local AimbotTab = Window:CreateTab("Aimbot", 4483362458)
-local CombatTab = Window:CreateTab("Combat", 4483362458)
 local SettingsTab = Window:CreateTab("Settings", 4483362458)
 
 local Config = {
@@ -46,7 +45,7 @@ local Config = {
     AimbotLockedTarget = nil,
 
     SilentAimEnabled = false,
-    SilentAimTeamCheck = false,
+    SilentAimTeamCheck = true,
     SilentAimWallCheck = true,
     SilentAimFOV = 150,
     SilentAimShowFOV = false,
@@ -57,12 +56,12 @@ local Config = {
     HitboxEnabled = false,
     HitboxSize = 10,
     HitboxTransparency = 0.7,
-    HitboxTeamCheck = false,
+    HitboxTeamCheck = true,
     HitboxTargetPart = "HumanoidRootPart",
     HitboxCache = {},
 
     TriggerBotEnabled = false,
-    TriggerBotTeamCheck = false,
+    TriggerBotTeamCheck = true,
     TriggerBotDelay = 0.05,
     TriggerBotKey = Enum.UserInputType.MouseButton2,
     TriggerBotKeyHeld = false,
@@ -83,9 +82,41 @@ local function safe(fn)
     end
 end
 
--- ============================================================
--- ESP
--- ============================================================
+local function sameTeam(player)
+    if not player or player == LocalPlayer then return true end
+
+    local myTeam = LocalPlayer.Team
+    local theirTeam = player.Team
+
+    if myTeam and theirTeam then
+        if myTeam == theirTeam then return true end
+        if myTeam.TeamColor and theirTeam.TeamColor and myTeam.TeamColor == theirTeam.TeamColor then
+            return true
+        end
+        return false
+    end
+
+    if myTeam or theirTeam then return false end
+
+    local theirChar = player.Character
+    local myChar = LocalPlayer.Character
+    if theirChar and myChar then
+        local theirColor = theirChar:GetAttribute("TeamColor")
+        local myColor = myChar:GetAttribute("TeamColor")
+        if not theirColor and theirChar:FindFirstChild("Team") then
+            theirColor = theirChar.Team.Value
+        end
+        if not myColor and myChar:FindFirstChild("Team") then
+            myColor = myChar.Team.Value
+        end
+        if theirColor and myColor and theirColor ~= "" and myColor ~= "" and theirColor == myColor then
+            return true
+        end
+    end
+
+    return false
+end
+
 local espCache = {}
 local renderConnection, playerAddedConn, playerRemovingConn
 local charAddedConnections = {}
@@ -186,7 +217,7 @@ local function updateSkeleton(data, char, rigType, color)
 end
 
 local function updateESP(player, data)
-    if Config.ESPTeamCheck and player.Team and LocalPlayer.Team and player.Team == LocalPlayer.Team then
+    if Config.ESPTeamCheck and sameTeam(player) then
         hide(data) return
     end
 
@@ -197,13 +228,12 @@ local function updateESP(player, data)
     local head = char:FindFirstChild("Head")
     if not humanoid or not root or not head or humanoid.Health <= 0 then hide(data) return end
 
-    -- only check depth, NOT on-screen — head/torso can be partially off-screen
+    local distance = (Camera.CFrame.Position - root.Position).Magnitude
+    if distance > Config.MaxDistance then hide(data) return end
+
     local headPos = Camera:WorldToViewportPoint(head.Position)
     local rootPos = Camera:WorldToViewportPoint(root.Position)
     if headPos.Z <= 0 or rootPos.Z <= 0 then hide(data) return end
-
-    local distance = (Camera.CFrame.Position - root.Position).Magnitude
-    if distance > Config.MaxDistance then hide(data) return end
 
     local height = math.abs(headPos.Y - rootPos.Y) * 2.0
     local width = height * 0.65
@@ -306,10 +336,8 @@ local function stopESP()
     for player, _ in pairs(espCache) do removeESP(player) end
     espCache = {}
 end
+-- Aegis Solutions | PART 2 of 3
 
--- ============================================================
--- FOV CIRCLES
--- ============================================================
 local fovCircle = Drawing.new("Circle")
 fovCircle.Visible=false; fovCircle.Thickness=1
 fovCircle.Color=Color3.fromRGB(255,255,255); fovCircle.Filled=false; fovCircle.NumSides=64
@@ -332,9 +360,6 @@ RunService.RenderStepped:Connect(safe(function()
     else silentFovCircle.Visible = false end
 end))
 
--- ============================================================
--- TARGETING
--- ============================================================
 local function hasLineOfSight(part)
     local origin = Camera.CFrame.Position
     local ray = Ray.new(origin, part.Position - origin)
@@ -345,36 +370,12 @@ local function hasLineOfSight(part)
     return true
 end
 
-local function findClosestTarget(fov, teamCheck, wallCheck, maxDist, targetPart)
-    local closest, closestDist = nil, fov
-    local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
-    for _, player in ipairs(Players:GetPlayers()) do
-        if player == LocalPlayer then continue end
-        if teamCheck and player.Team == LocalPlayer.Team then continue end
-        local char = player.Character
-        if not char then continue end
-        local humanoid = char:FindFirstChildOfClass("Humanoid")
-        local root = char:FindFirstChild("HumanoidRootPart")
-        if not humanoid or not root or humanoid.Health <= 0 then continue end
-        local dist = (Camera.CFrame.Position - root.Position).Magnitude
-        if dist > maxDist then continue end
-        local part = char:FindFirstChild(targetPart) or root
-        local sp = Camera:WorldToViewportPoint(part.Position)
-        if sp.Z <= 0 then continue end
-        local sd = (Vector2.new(sp.X, sp.Y) - center).Magnitude
-        if sd > fov then continue end
-        if wallCheck and not hasLineOfSight(part) then continue end
-        if sd < closestDist then closestDist = sd; closest = {player=player, part=part} end
-    end
-    return closest
-end
-
 local function getValidTargets(fov, teamCheck, wallCheck, maxDist, targetPart)
     local list = {}
     local center = Vector2.new(Camera.ViewportSize.X/2, Camera.ViewportSize.Y/2)
     for _, player in ipairs(Players:GetPlayers()) do
         if player == LocalPlayer then continue end
-        if teamCheck and player.Team == LocalPlayer.Team then continue end
+        if teamCheck and sameTeam(player) then continue end
         local char = player.Character
         if not char then continue end
         local humanoid = char:FindFirstChildOfClass("Humanoid")
@@ -393,11 +394,7 @@ local function getValidTargets(fov, teamCheck, wallCheck, maxDist, targetPart)
     table.sort(list, function(a,b) return a.screenDist < b.screenDist end)
     return list
 end
--- Aegis Solutions | PART 2 of 3
 
--- ============================================================
--- AIMBOT
--- ============================================================
 local aimbotConnection
 
 local function isAimbotActive()
@@ -477,14 +474,15 @@ local function stopAimbot()
     Config.AimbotLockedTarget = nil
 end
 
--- ============================================================
--- SILENT AIM (hooks __namecall for FireServer)
--- ============================================================
 local silentActive = false
 local originalNamecall
 
 local function startSilentAim()
     if silentActive then return end
+    if not getnamecallmethod or not hookmetamethod then
+        warn("[Aegis] Silent aim not supported on this executor")
+        return
+    end
     originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
         local method = getnamecallmethod()
         if (method == "FireServer" or method == "InvokeServer") and Config.SilentAimEnabled then
@@ -513,9 +511,6 @@ local function stopSilentAim()
     end
 end
 
--- ============================================================
--- HITBOX
--- ============================================================
 local hitboxConn
 
 local function applyHitbox(player)
@@ -550,7 +545,7 @@ local function startHitbox()
         if not Config.HitboxEnabled then return end
         for _, player in ipairs(Players:GetPlayers()) do
             if player == LocalPlayer then continue end
-            if Config.HitboxTeamCheck and player.Team == LocalPlayer.Team then continue end
+            if Config.HitboxTeamCheck and sameTeam(player) then continue end
             applyHitbox(player)
         end
     end))
@@ -562,9 +557,6 @@ local function stopHitbox()
     Config.HitboxCache = {}
 end
 
--- ============================================================
--- TRIGGER BOT
--- ============================================================
 local triggerConn
 
 local function getCrosshairTarget()
@@ -575,7 +567,7 @@ local function getCrosshairTarget()
     if not model then return nil end
     local player = Players:GetPlayerFromCharacter(model)
     if not player or player == LocalPlayer then return nil end
-    if Config.TriggerBotTeamCheck and player.Team == LocalPlayer.Team then return nil end
+    if Config.TriggerBotTeamCheck and sameTeam(player) then return nil end
     local hum = model:FindFirstChildOfClass("Humanoid")
     if not hum or hum.Health <= 0 then return nil end
     return player
@@ -618,9 +610,6 @@ local function stopTriggerBot()
     if triggerConn then triggerConn:Disconnect(); triggerConn = nil end
 end
 
--- ============================================================
--- INPUT
--- ============================================================
 UserInputService.InputBegan:Connect(function(input, gpe)
     if gpe then return end
     if input.UserInputType == Config.AimbotKey then Config.AimbotKeyHeld = true end
@@ -633,20 +622,27 @@ UserInputService.InputEnded:Connect(function(input)
     if input.UserInputType == Config.TriggerBotKey then Config.TriggerBotKeyHeld = false end
 end)
 
+local touchStartTime = 0
+local TRIGGER_HOLD_TIME = 0.3
+
 UserInputService.TouchStarted:Connect(function()
     Config.AimbotTouchHeld = true
-    Config.TriggerBotKeyHeld = true
+    touchStartTime = tick()
+    task.spawn(function()
+        task.wait(TRIGGER_HOLD_TIME)
+        if Config.AimbotTouchHeld and (tick() - touchStartTime) >= TRIGGER_HOLD_TIME then
+            Config.TriggerBotKeyHeld = true
+        end
+    end)
 end)
 
 UserInputService.TouchEnded:Connect(function()
     Config.AimbotTouchHeld = false
     Config.TriggerBotKeyHeld = false
+    touchStartTime = 0
 end)
 -- Aegis Solutions | PART 3 of 3
 
--- ============================================================
--- ESP TAB
--- ============================================================
 ESPTab:CreateSection("Main")
 ESPTab:CreateToggle({Name="Enable ESP", CurrentValue=true, Flag="ESPEnabled", Callback=function(v)
     Config.ESPEnabled=v; if v then startESP() else stopESP() end
@@ -663,66 +659,53 @@ ESPTab:CreateToggle({Name="Skeleton", CurrentValue=false, Flag="ESPSkeleton", Ca
 ESPTab:CreateToggle({Name="Team Check", CurrentValue=false, Flag="ESPTeamCheck", Callback=function(v) Config.ESPTeamCheck=v end})
 ESPTab:CreateSlider({Name="Max Distance", Range={10,5000}, Increment=10, Suffix=" studs", CurrentValue=4920, Flag="ESPMaxDistance", Callback=function(v) Config.MaxDistance=v end})
 
--- ============================================================
--- AIMBOT TAB
--- ============================================================
-AimbotTab:CreateSection("Main")
+AimbotTab:CreateSection("Aimbot")
 AimbotTab:CreateToggle({Name="Enable Aimbot", CurrentValue=true, Flag="AimbotEnabled", Callback=function(v)
     Config.AimbotEnabled=v; if v then startAimbot() else stopAimbot() end
 end})
 AimbotTab:CreateDropdown({Name="Activation Mode", Options={"Hold Key","Always On","Touch"}, CurrentOption={"Always On"}, Flag="AimbotActivation",
     Callback=function(o) Config.AimbotActivation=o[1] or "Always On"; Config.AimbotLockedTarget=nil end})
-
-AimbotTab:CreateSection("Target")
 AimbotTab:CreateDropdown({Name="Target Part", Options={"Head","HumanoidRootPart","UpperTorso","Torso"}, CurrentOption={"Head"}, Flag="AimbotTarget",
     Callback=function(o) Config.AimbotTargetPart=o[1] or "Head" end})
 AimbotTab:CreateToggle({Name="Target Lock (hard lock)", CurrentValue=true, Flag="AimbotTargetLock",
     Callback=function(v) Config.AimbotTargetLock=v; Config.AimbotLockedTarget=nil end})
 AimbotTab:CreateSlider({Name="Switch Delay", Range={0,5}, Increment=0.1, Suffix="s", CurrentValue=0.2, Flag="AimbotSwitchDelay", Callback=function(v) Config.AimbotSwitchDelay=v end})
-AimbotTab:CreateLabel("Cycle Target key: Q (hardcoded)")
-
-AimbotTab:CreateSection("Settings")
-AimbotTab:CreateToggle({Name="Team Check", CurrentValue=false, Flag="AimbotTeamCheck", Callback=function(v) Config.AimbotTeamCheck=v end})
+AimbotTab:CreateToggle({Name="Team Check", CurrentValue=false, Flag="AimbotTeamCheck", Callback=function(v) Config.AimbotTeamCheck=v; Config.AimbotLockedTarget=nil end})
 AimbotTab:CreateToggle({Name="Wall Check", CurrentValue=true, Flag="AimbotWallCheck", Callback=function(v) Config.AimbotWallCheck=v end})
 AimbotTab:CreateToggle({Name="Show FOV Circle", CurrentValue=true, Flag="AimbotShowFOV", Callback=function(v) Config.AimbotShowFOV=v end})
 AimbotTab:CreateSlider({Name="FOV", Range={10,500}, Increment=5, Suffix=" px", CurrentValue=55, Flag="AimbotFOV", Callback=function(v) Config.AimbotFOV=v end})
 AimbotTab:CreateSlider({Name="Smoothness", Range={1,20}, Increment=1, Suffix="x", CurrentValue=2, Flag="AimbotSmooth", Callback=function(v) Config.AimbotSmoothness=v end})
 AimbotTab:CreateSlider({Name="Max Distance", Range={10,5000}, Increment=10, Suffix=" studs", CurrentValue=1000, Flag="AimbotMaxDist", Callback=function(v) Config.AimbotMaxDistance=v end})
+AimbotTab:CreateLabel("Cycle Target key: Q (hardcoded)")
 
--- ============================================================
--- COMBAT TAB
--- ============================================================
-CombatTab:CreateSection("Silent Aim")
-CombatTab:CreateToggle({Name="Enable Silent Aim", CurrentValue=false, Flag="SilentAimEnabled",
+AimbotTab:CreateSection("Silent Aim")
+AimbotTab:CreateToggle({Name="Enable Silent Aim", CurrentValue=false, Flag="SilentAimEnabled",
     Callback=function(v) Config.SilentAimEnabled=v; if v then startSilentAim() else stopSilentAim() end end})
-CombatTab:CreateDropdown({Name="Target Part", Options={"Head","HumanoidRootPart","UpperTorso","Torso"}, CurrentOption={"Head"}, Flag="SilentAimTarget",
+AimbotTab:CreateDropdown({Name="Target Part", Options={"Head","HumanoidRootPart","UpperTorso","Torso"}, CurrentOption={"Head"}, Flag="SilentAimTarget",
     Callback=function(o) Config.SilentAimTargetPart=o[1] or "Head" end})
-CombatTab:CreateToggle({Name="Team Check", CurrentValue=false, Flag="SilentAimTeamCheck", Callback=function(v) Config.SilentAimTeamCheck=v end})
-CombatTab:CreateToggle({Name="Wall Check", CurrentValue=true, Flag="SilentAimWallCheck", Callback=function(v) Config.SilentAimWallCheck=v end})
-CombatTab:CreateToggle({Name="Show FOV Circle", CurrentValue=false, Flag="SilentAimShowFOV", Callback=function(v) Config.SilentAimShowFOV=v end})
-CombatTab:CreateSlider({Name="Silent FOV", Range={10,500}, Increment=5, Suffix=" px", CurrentValue=150, Flag="SilentAimFOV", Callback=function(v) Config.SilentAimFOV=v end})
-CombatTab:CreateSlider({Name="Hit Chance", Range={0,100}, Increment=1, Suffix="%", CurrentValue=100, Flag="SilentAimHitChance", Callback=function(v) Config.SilentAimHitChance=v end})
-CombatTab:CreateSlider({Name="Max Distance", Range={10,5000}, Increment=10, Suffix=" studs", CurrentValue=1000, Flag="SilentAimMaxDist", Callback=function(v) Config.SilentAimMaxDistance=v end})
+AimbotTab:CreateToggle({Name="Team Check", CurrentValue=true, Flag="SilentAimTeamCheck", Callback=function(v) Config.SilentAimTeamCheck=v end})
+AimbotTab:CreateToggle({Name="Wall Check", CurrentValue=true, Flag="SilentAimWallCheck", Callback=function(v) Config.SilentAimWallCheck=v end})
+AimbotTab:CreateToggle({Name="Show FOV Circle", CurrentValue=false, Flag="SilentAimShowFOV", Callback=function(v) Config.SilentAimShowFOV=v end})
+AimbotTab:CreateSlider({Name="Silent FOV", Range={10,500}, Increment=5, Suffix=" px", CurrentValue=150, Flag="SilentAimFOV", Callback=function(v) Config.SilentAimFOV=v end})
+AimbotTab:CreateSlider({Name="Hit Chance", Range={0,100}, Increment=1, Suffix="%", CurrentValue=100, Flag="SilentAimHitChance", Callback=function(v) Config.SilentAimHitChance=v end})
+AimbotTab:CreateSlider({Name="Max Distance", Range={10,5000}, Increment=10, Suffix=" studs", CurrentValue=1000, Flag="SilentAimMaxDist", Callback=function(v) Config.SilentAimMaxDistance=v end})
 
-CombatTab:CreateSection("Hitbox Expander")
-CombatTab:CreateToggle({Name="Enable Hitbox Expander", CurrentValue=false, Flag="HitboxEnabled",
+AimbotTab:CreateSection("Hitbox Expander")
+AimbotTab:CreateToggle({Name="Enable Hitbox Expander", CurrentValue=false, Flag="HitboxEnabled",
     Callback=function(v) Config.HitboxEnabled=v; if v then startHitbox() else stopHitbox() end end})
-CombatTab:CreateDropdown({Name="Hitbox Part", Options={"HumanoidRootPart","Head","UpperTorso","Torso"}, CurrentOption={"HumanoidRootPart"}, Flag="HitboxPart",
+AimbotTab:CreateDropdown({Name="Hitbox Part", Options={"HumanoidRootPart","Head","UpperTorso","Torso"}, CurrentOption={"HumanoidRootPart"}, Flag="HitboxPart",
     Callback=function(o) if Config.HitboxEnabled then stopHitbox() end; Config.HitboxTargetPart=o[1] or "HumanoidRootPart"; if Config.HitboxEnabled then startHitbox() end end})
-CombatTab:CreateToggle({Name="Hitbox Team Check", CurrentValue=false, Flag="HitboxTeamCheck", Callback=function(v) Config.HitboxTeamCheck=v end})
-CombatTab:CreateSlider({Name="Hitbox Size", Range={1,50}, Increment=1, Suffix=" studs", CurrentValue=10, Flag="HitboxSize", Callback=function(v) Config.HitboxSize=v end})
-CombatTab:CreateSlider({Name="Hitbox Transparency", Range={0,1}, Increment=0.1, Suffix="", CurrentValue=0.7, Flag="HitboxTransparency", Callback=function(v) Config.HitboxTransparency=v end})
+AimbotTab:CreateToggle({Name="Hitbox Team Check", CurrentValue=true, Flag="HitboxTeamCheck", Callback=function(v) Config.HitboxTeamCheck=v end})
+AimbotTab:CreateSlider({Name="Hitbox Size", Range={1,50}, Increment=1, Suffix=" studs", CurrentValue=10, Flag="HitboxSize", Callback=function(v) Config.HitboxSize=v end})
+AimbotTab:CreateSlider({Name="Hitbox Transparency", Range={0,1}, Increment=0.1, Suffix="", CurrentValue=0.7, Flag="HitboxTransparency", Callback=function(v) Config.HitboxTransparency=v end})
 
-CombatTab:CreateSection("Trigger Bot")
-CombatTab:CreateToggle({Name="Enable Trigger Bot", CurrentValue=false, Flag="TriggerBotEnabled",
+AimbotTab:CreateSection("Trigger Bot")
+AimbotTab:CreateToggle({Name="Enable Trigger Bot", CurrentValue=false, Flag="TriggerBotEnabled",
     Callback=function(v) Config.TriggerBotEnabled=v; if v then startTriggerBot() else stopTriggerBot() end end})
-CombatTab:CreateToggle({Name="Trigger Team Check", CurrentValue=false, Flag="TriggerTeamCheck", Callback=function(v) Config.TriggerBotTeamCheck=v end})
-CombatTab:CreateSlider({Name="Trigger Delay", Range={0,1}, Increment=0.01, Suffix="s", CurrentValue=0.05, Flag="TriggerDelay", Callback=function(v) Config.TriggerBotDelay=v end})
-CombatTab:CreateSlider({Name="Trigger Max Distance", Range={10,1000}, Increment=10, Suffix=" studs", CurrentValue=500, Flag="TriggerMaxDist", Callback=function(v) Config.TriggerBotMaxDistance=v end})
+AimbotTab:CreateToggle({Name="Trigger Team Check", CurrentValue=true, Flag="TriggerTeamCheck", Callback=function(v) Config.TriggerBotTeamCheck=v end})
+AimbotTab:CreateSlider({Name="Trigger Delay", Range={0,1}, Increment=0.01, Suffix="s", CurrentValue=0.05, Flag="TriggerDelay", Callback=function(v) Config.TriggerBotDelay=v end})
+AimbotTab:CreateSlider({Name="Trigger Max Distance", Range={10,1000}, Increment=10, Suffix=" studs", CurrentValue=500, Flag="TriggerMaxDist", Callback=function(v) Config.TriggerBotMaxDistance=v end})
 
--- ============================================================
--- SETTINGS TAB
--- ============================================================
 SettingsTab:CreateSection("Script")
 SettingsTab:CreateButton({
     Name = "Delete Script",
@@ -737,8 +720,6 @@ SettingsTab:CreateButton({
 SettingsTab:CreateSection("Credits")
 SettingsTab:CreateLabel("made by _.ingnix._")
 SettingsTab:CreateLabel("ui: rayfield")
-
--- no LoadConfiguration — old cached keybinds were breaking the script
 
 startESP()
 startAimbot()
